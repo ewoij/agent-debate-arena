@@ -25,6 +25,7 @@ import type {
   ArenaEvent,
   Conversation,
   Message,
+  MessageAttachment,
   ReadCursor,
 } from "@/lib/types";
 
@@ -460,6 +461,8 @@ interface PendingAttachment {
   data_base64: string;
   previewUrl: string;
   name: string;
+  size: number;
+  isImage: boolean;
 }
 
 function Composer({ conversationId }: { conversationId: string }) {
@@ -483,6 +486,7 @@ function Composer({ conversationId }: { conversationId: string }) {
           attachments: attachments.map((a) => ({
             mime: a.mime,
             data_base64: a.data_base64,
+            name: a.name,
           })),
         }),
       });
@@ -502,23 +506,22 @@ function Composer({ conversationId }: { conversationId: string }) {
 
   async function onPickFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
-    const allowed = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
     const next: PendingAttachment[] = [];
     for (const file of Array.from(files)) {
-      if (!allowed.has(file.type)) {
-        toast.error(`${file.name}: unsupported type (${file.type || "unknown"})`);
-        continue;
-      }
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error(`${file.name}: exceeds 5MB`);
+      if (file.size > 25 * 1024 * 1024) {
+        toast.error(`${file.name}: exceeds 25MB`);
         continue;
       }
       const data_base64 = await fileToBase64(file);
+      const mime = file.type || "application/octet-stream";
+      const isImage = mime.startsWith("image/") && mime !== "image/svg+xml";
       next.push({
-        mime: file.type,
+        mime,
         data_base64,
         previewUrl: URL.createObjectURL(file),
         name: file.name,
+        size: file.size,
+        isImage,
       });
     }
     if (next.length === 0) return;
@@ -539,12 +542,28 @@ function Composer({ conversationId }: { conversationId: string }) {
         <div className="flex flex-wrap gap-2">
           {attachments.map((a, i) => (
             <div key={a.previewUrl} className="relative">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={a.previewUrl}
-                alt={a.name}
-                className="h-16 w-16 object-cover rounded-md border border-border"
-              />
+              {a.isImage ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={a.previewUrl}
+                  alt={a.name}
+                  className="h-16 w-16 object-cover rounded-md border border-border"
+                  title={a.name}
+                />
+              ) : (
+                <div
+                  className="h-16 max-w-[180px] flex items-center gap-2 px-2 rounded-md border border-border bg-muted/30 text-xs"
+                  title={`${a.name} · ${a.mime}`}
+                >
+                  <span className="text-base">📎</span>
+                  <span className="flex flex-col min-w-0">
+                    <span className="font-medium truncate">{a.name}</span>
+                    <span className="text-muted-foreground truncate">
+                      {formatBytes(a.size)}
+                    </span>
+                  </span>
+                </div>
+              )}
               <button
                 type="button"
                 onClick={() => removeAttachment(i)}
@@ -574,7 +593,6 @@ function Composer({ conversationId }: { conversationId: string }) {
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/png,image/jpeg,image/gif,image/webp"
           multiple
           className="hidden"
           onChange={(e) => {
@@ -745,6 +763,56 @@ function readersEqual(a: MessageReader[], b: MessageReader[]): boolean {
   return true;
 }
 
+function AttachmentTile({
+  attachment,
+}: {
+  attachment: MessageAttachment;
+}) {
+  const isImage = attachment.mime.startsWith("image/") && attachment.mime !== "image/svg+xml";
+  const href = attachment.name
+    ? `${attachment.url}?name=${encodeURIComponent(attachment.name)}`
+    : attachment.url;
+  if (isImage) {
+    return (
+      <a href={href} target="_blank" rel="noreferrer" className="block">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={attachment.url}
+          alt={attachment.name ?? ""}
+          className="max-h-64 max-w-xs rounded-md border border-border object-contain bg-muted/30"
+          loading="lazy"
+        />
+      </a>
+    );
+  }
+  const displayName = attachment.name ?? attachment.mime;
+  const sizeLabel = attachment.size != null ? formatBytes(attachment.size) : null;
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="flex items-center gap-2 max-w-xs rounded-md border border-border bg-muted/30 px-3 py-2 text-xs hover:bg-muted/60 transition-colors"
+      title={`${attachment.mime}${sizeLabel ? ` · ${sizeLabel}` : ""}`}
+    >
+      <span className="text-base shrink-0">📎</span>
+      <span className="flex flex-col min-w-0">
+        <span className="font-medium text-foreground truncate">{displayName}</span>
+        <span className="text-muted-foreground truncate">
+          {attachment.mime}
+          {sizeLabel ? ` · ${sizeLabel}` : ""}
+        </span>
+      </span>
+    </a>
+  );
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(2)} MB`;
+}
+
 const MessageRow = memo(
   function MessageRow({
     message,
@@ -807,21 +875,7 @@ const MessageRow = memo(
       {message.attachments && message.attachments.length > 0 ? (
         <div className="pl-5 flex flex-wrap gap-2 pt-1">
           {message.attachments.map((a) => (
-            <a
-              key={a.url}
-              href={a.url}
-              target="_blank"
-              rel="noreferrer"
-              className="block"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={a.url}
-                alt=""
-                className="max-h-64 max-w-xs rounded-md border border-border object-contain bg-muted/30"
-                loading="lazy"
-              />
-            </a>
+            <AttachmentTile key={a.url} attachment={a} />
           ))}
         </div>
       ) : null}

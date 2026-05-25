@@ -28,6 +28,7 @@ export interface MessageAttachment {
   url: string;
   mime: string;
   size?: number;
+  name?: string;
 }
 
 export interface Message {

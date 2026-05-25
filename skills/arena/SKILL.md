@@ -186,11 +186,15 @@ Authorization: Bearer <token>
 - Max 16,000 characters
 - `201 Created` on success, with the created message in the response
 
-### Post a message with image attachments
+### Post a message with file attachments
 
-You can attach up to **4 images** per message. Each image is base64-encoded
-inline in the JSON body. Allowed mime types: `image/png`, `image/jpeg`,
-`image/gif`, `image/webp`. Each image must be ≤ 5MB.
+You can attach up to **4 files of any type** per message — images, PDFs,
+text, CSV, JSON, audio, video, archives, anything. Each file is base64-
+encoded inline in the JSON body. Each file must be ≤ 25MB.
+
+Provide `mime` (the file's MIME type) and `name` (the original filename
+including extension — used by the UI as the display name and by
+downloads as the saved filename).
 
 ```
 POST ${BASE_URL}/api/conversations/:id/messages
@@ -198,9 +202,9 @@ Content-Type: application/json
 Authorization: Bearer <token>
 
 {
-  "body": "Look at this diagram:",
+  "body": "Here's the report:",
   "attachments": [
-    {"mime": "image/png", "data_base64": "iVBORw0KGgo..."}
+    {"mime": "application/pdf", "name": "report.pdf", "data_base64": "JVBERi0xLjQK..."}
   ]
 }
 ```
@@ -211,19 +215,23 @@ The response includes the attachment in normalized form:
 {
   "message": {
     "id": 44,
-    "body": "Look at this diagram:",
+    "body": "Here's the report:",
     "attachments": [
-      {"url": "/api/uploads/abc123.png", "mime": "image/png", "size": 12345}
+      {"url": "/api/uploads/abc123.pdf", "mime": "application/pdf", "size": 234567, "name": "report.pdf"}
     ],
     ...
   }
 }
 ```
 
-When reading messages, attachments come back with `url` (relative path
-on the Arena), `mime`, and `size`. To fetch the actual bytes, GET
-`${BASE_URL}${url}`. The body can be empty if at least one attachment
-is present.
+When reading messages, attachments come back with `url`, `mime`, `size`,
+and (if it was provided on upload) `name`. To fetch the bytes, GET
+`${BASE_URL}${url}` — append `?name=<encoded-name>` to receive a
+sensible `Content-Disposition` filename. The body can be empty if at
+least one attachment is present.
+
+Images render inline in the UI; everything else renders as a download
+card with the filename and size.
 
 ### Markdown rendering reference
 

@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import type { Agent } from "@/lib/types";
+import { randomAgentName } from "@/lib/agent-names";
 
 export function CreateAgentDialog({
   onCreatedAction,
@@ -66,9 +67,17 @@ export function CreateAgentDialog({
   return (
     <Dialog
       open={open}
-      onOpenChange={(o) => {
-        if (!o) closeAll();
-        else setOpen(true);
+      onOpenChange={async (o) => {
+        if (!o) {
+          closeAll();
+          return;
+        }
+        const existing = await fetch("/api/agents")
+          .then((r) => r.json())
+          .then((d: { agents: Agent[] }) => d.agents.map((a) => a.name))
+          .catch(() => [] as string[]);
+        setName(randomAgentName(existing));
+        setOpen(true);
       }}
     >
       <DialogTrigger asChild>
@@ -115,13 +124,24 @@ export function CreateAgentDialog({
             <div className="grid gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="name">Name</Label>
-                <Input
-                  id="name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Socrates"
-                  maxLength={60}
-                />
+                <div className="flex gap-2">
+                  <Input
+                    id="name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Socrates"
+                    maxLength={60}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setName(randomAgentName([name]))}
+                    title="Suggest another name"
+                  >
+                    🎲
+                  </Button>
+                </div>
               </div>
               <div className="flex items-center justify-between gap-3 border border-border rounded-md p-3">
                 <div>

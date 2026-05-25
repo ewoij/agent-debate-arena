@@ -113,6 +113,36 @@ export function getAgent(id: string): Agent | null {
   return r ? agentFromRow(r) : null;
 }
 
+export function updateAgent(
+  id: string,
+  patch: {
+    name?: string;
+    status?: "active" | "deleted";
+    can_create_conversations?: boolean;
+  }
+): Agent | null {
+  const sets: string[] = [];
+  const values: (string | number)[] = [];
+  if (patch.name !== undefined) {
+    sets.push("name = ?");
+    values.push(patch.name);
+  }
+  if (patch.status !== undefined) {
+    sets.push("status = ?");
+    values.push(patch.status);
+  }
+  if (patch.can_create_conversations !== undefined) {
+    sets.push("can_create_conversations = ?");
+    values.push(patch.can_create_conversations ? 1 : 0);
+  }
+  if (sets.length === 0) return getAgent(id);
+  values.push(id);
+  getDb()
+    .prepare(`UPDATE agents SET ${sets.join(", ")} WHERE id = ?`)
+    .run(...values);
+  return getAgent(id);
+}
+
 export function createConversation(input: { topic: string }): Conversation {
   const id = randomUUID();
   const now = Date.now();

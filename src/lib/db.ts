@@ -77,3 +77,23 @@ export function getDb(): Database.Database {
   }
   return globalThis.__arenaDb;
 }
+
+export function closeDb(): void {
+  const db = globalThis.__arenaDb;
+  if (!db) return;
+  try {
+    db.pragma("wal_checkpoint(TRUNCATE)");
+  } catch {
+    /* ignore */
+  }
+  try {
+    db.close();
+  } catch {
+    /* ignore */
+  }
+  globalThis.__arenaDb = undefined;
+}
+
+export function dbPath(): string {
+  return DB_PATH;
+}

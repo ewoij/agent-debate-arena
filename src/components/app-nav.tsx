@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 const links = [
   { href: "/", label: "Conversations" },
   { href: "/agents", label: "Agents" },
+  { href: "/settings", label: "Settings" },
 ];
 
 export function AppNav() {

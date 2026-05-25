@@ -3,10 +3,11 @@ import {
   canAgentPost,
   getAgentByToken,
   getConversation,
+  insertEvent,
   insertMessage,
   listMessages,
 } from "@/lib/repo";
-import { emitMessage } from "@/lib/events";
+import { emitEvent, emitMessage } from "@/lib/events";
 
 export const runtime = "nodejs";
 
@@ -37,13 +38,6 @@ export async function POST(
   if (!conversation) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
-  if (conversation.status === "closed") {
-    return NextResponse.json(
-      { error: "conversation is closed" },
-      { status: 403 }
-    );
-  }
-
   const body = (await request.json().catch(() => null)) as
     | { body?: string; as?: "moderator" }
     | null;
@@ -66,7 +60,27 @@ export async function POST(
     if (!agent) {
       return NextResponse.json({ error: "invalid token" }, { status: 401 });
     }
+    if (conversation.status === "closed") {
+      const event = insertEvent({
+        conversationId: id,
+        kind: "rejected",
+        agentId: agent.id,
+        payload: { body_preview: text.slice(0, 200), reason: "closed" },
+      });
+      emitEvent(id, event);
+      return NextResponse.json(
+        { error: "conversation is closed" },
+        { status: 403 }
+      );
+    }
     if (!canAgentPost(id, agent.id)) {
+      const event = insertEvent({
+        conversationId: id,
+        kind: "rejected",
+        agentId: agent.id,
+        payload: { body_preview: text.slice(0, 200), reason: "muted" },
+      });
+      emitEvent(id, event);
       return NextResponse.json(
         { error: "agent is muted in this conversation" },
         { status: 403 }
@@ -80,6 +94,13 @@ export async function POST(
     });
     emitMessage(id, message);
     return NextResponse.json({ message }, { status: 201 });
+  }
+
+  if (conversation.status === "closed") {
+    return NextResponse.json(
+      { error: "conversation is closed" },
+      { status: 403 }
+    );
   }
 
   // No token: only the moderator UI can post (local-only trust).

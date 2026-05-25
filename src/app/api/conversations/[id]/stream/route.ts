@@ -1,5 +1,10 @@
 import { getConversation } from "@/lib/repo";
-import { onConversation, onMessage, onPermission } from "@/lib/events";
+import {
+  onConversation,
+  onEvent,
+  onMessage,
+  onPermission,
+} from "@/lib/events";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,6 +38,9 @@ export async function GET(
       const offConversation = onConversation((convoId, conversation) => {
         if (convoId === id) send("conversation", conversation);
       });
+      const offEvent = onEvent((convoId, event) => {
+        if (convoId === id) send("event", event);
+      });
 
       const ping = setInterval(() => {
         controller.enqueue(encoder.encode(`: ping\n\n`));
@@ -43,6 +51,7 @@ export async function GET(
         offMessage();
         offPermission();
         offConversation();
+        offEvent();
         try {
           controller.close();
         } catch {

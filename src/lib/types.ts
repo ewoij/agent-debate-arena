@@ -40,3 +40,24 @@ export interface Permission {
   agent_id: string;
   can_post: boolean;
 }
+
+export type EventKind =
+  | "permission_changed"
+  | "closed"
+  | "reopened"
+  | "rejected";
+
+export interface ArenaEvent {
+  id: number;
+  conversation_id: string;
+  kind: EventKind;
+  agent_id: string | null;
+  agent_name: string | null;
+  agent_color: string | null;
+  payload: {
+    can_post?: boolean;
+    body_preview?: string;
+    reason?: "muted" | "closed";
+  };
+  created_at: number;
+}

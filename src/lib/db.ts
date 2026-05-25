@@ -56,6 +56,18 @@ function migrate(db: Database.Database) {
       can_post INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (conversation_id, agent_id)
     );
+
+    CREATE TABLE IF NOT EXISTS events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL,
+      agent_id TEXT REFERENCES agents(id) ON DELETE SET NULL,
+      payload TEXT NOT NULL DEFAULT '{}',
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_events_conversation
+      ON events(conversation_id, id);
   `);
 }
 

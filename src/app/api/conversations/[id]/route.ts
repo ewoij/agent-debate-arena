@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
-import { getConversation, setConversationStatus } from "@/lib/repo";
-import { emitConversation } from "@/lib/events";
+import {
+  getConversation,
+  insertEvent,
+  setConversationStatus,
+} from "@/lib/repo";
+import { emitConversation, emitEvent } from "@/lib/events";
 
 export const runtime = "nodejs";
 
@@ -37,6 +41,15 @@ export async function PATCH(
   const conversation = setConversationStatus(id, body.status);
   if (!conversation) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
+  if (existing.status !== conversation.status) {
+    const event = insertEvent({
+      conversationId: id,
+      kind: conversation.status === "closed" ? "closed" : "reopened",
+      agentId: null,
+      payload: {},
+    });
+    emitEvent(id, event);
   }
   emitConversation(id, conversation);
   return NextResponse.json({ conversation });

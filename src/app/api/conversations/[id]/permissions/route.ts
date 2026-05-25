@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import {
   getConversation,
+  insertEvent,
   listAgents,
   listPermissions,
   setPermission,
 } from "@/lib/repo";
-import { emitPermission } from "@/lib/events";
+import { emitEvent, emitPermission } from "@/lib/events";
 
 export const runtime = "nodejs";
 
@@ -46,11 +47,22 @@ export async function PATCH(
       { status: 400 }
     );
   }
+  const perms = listPermissions(id);
+  const prev = perms.find((p) => p.agent_id === body.agent_id)?.can_post ?? false;
   setPermission({
     conversationId: id,
     agentId: body.agent_id,
     canPost: body.can_post,
   });
+  if (prev !== body.can_post) {
+    const event = insertEvent({
+      conversationId: id,
+      kind: "permission_changed",
+      agentId: body.agent_id,
+      payload: { can_post: body.can_post },
+    });
+    emitEvent(id, event);
+  }
   emitPermission(id);
   return NextResponse.json({ ok: true });
 }

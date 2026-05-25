@@ -3,8 +3,10 @@ import { getDb } from "./db";
 import { hashToken } from "./tokens";
 import type {
   Agent,
+  ArenaEvent,
   Conversation,
   ConversationSummary,
+  EventKind,
   Message,
   Permission,
 } from "./types";
@@ -288,4 +290,78 @@ export function canAgentPost(
     )
     .get(conversationId, agentId) as { can_post: number } | undefined;
   return !!r && !!r.can_post;
+}
+
+interface EventRow {
+  id: number;
+  conversation_id: string;
+  kind: string;
+  agent_id: string | null;
+  agent_name: string | null;
+  agent_color: string | null;
+  payload: string;
+  created_at: number;
+}
+
+function eventFromRow(r: EventRow): ArenaEvent {
+  let payload: ArenaEvent["payload"] = {};
+  try {
+    payload = JSON.parse(r.payload || "{}") as ArenaEvent["payload"];
+  } catch {
+    payload = {};
+  }
+  return {
+    id: r.id,
+    conversation_id: r.conversation_id,
+    kind: r.kind as EventKind,
+    agent_id: r.agent_id,
+    agent_name: r.agent_name,
+    agent_color: r.agent_color,
+    payload,
+    created_at: r.created_at,
+  };
+}
+
+export function insertEvent(input: {
+  conversationId: string;
+  kind: EventKind;
+  agentId: string | null;
+  payload: ArenaEvent["payload"];
+}): ArenaEvent {
+  const now = Date.now();
+  const result = getDb()
+    .prepare(
+      `INSERT INTO events (conversation_id, kind, agent_id, payload, created_at)
+       VALUES (?, ?, ?, ?, ?)`
+    )
+    .run(
+      input.conversationId,
+      input.kind,
+      input.agentId,
+      JSON.stringify(input.payload ?? {}),
+      now
+    );
+  const id = Number(result.lastInsertRowid);
+  const row = getDb()
+    .prepare(
+      `SELECT e.*, a.name AS agent_name, a.color AS agent_color
+       FROM events e
+       LEFT JOIN agents a ON a.id = e.agent_id
+       WHERE e.id = ?`
+    )
+    .get(id) as EventRow;
+  return eventFromRow(row);
+}
+
+export function listEvents(conversationId: string): ArenaEvent[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT e.*, a.name AS agent_name, a.color AS agent_color
+       FROM events e
+       LEFT JOIN agents a ON a.id = e.agent_id
+       WHERE e.conversation_id = ?
+       ORDER BY e.id ASC`
+    )
+    .all(conversationId) as EventRow[];
+  return rows.map(eventFromRow);
 }

@@ -12,11 +12,37 @@ import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { formatTime } from "@/lib/format";
-import type { Agent, Conversation, Message } from "@/lib/types";
+import type { Agent, ArenaEvent, Conversation, Message } from "@/lib/types";
 
 interface Participant {
   agent: Agent;
   can_post: boolean;
+}
+
+type TimelineEntry =
+  | { kind: "message"; createdAt: number; key: string; data: Message }
+  | { kind: "event"; createdAt: number; key: string; data: ArenaEvent };
+
+function buildTimeline(messages: Message[], events: ArenaEvent[]): TimelineEntry[] {
+  const merged: TimelineEntry[] = [
+    ...messages.map<TimelineEntry>((m) => ({
+      kind: "message",
+      createdAt: m.created_at,
+      key: `m-${m.id}`,
+      data: m,
+    })),
+    ...events.map<TimelineEntry>((e) => ({
+      kind: "event",
+      createdAt: e.created_at,
+      key: `e-${e.id}`,
+      data: e,
+    })),
+  ];
+  merged.sort((a, b) => {
+    if (a.createdAt !== b.createdAt) return a.createdAt - b.createdAt;
+    return a.key.localeCompare(b.key);
+  });
+  return merged;
 }
 
 export default function ConversationPage() {
@@ -25,6 +51,7 @@ export default function ConversationPage() {
 
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [events, setEvents] = useState<ArenaEvent[]>([]);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [composerValue, setComposerValue] = useState("");
   const [posting, setPosting] = useState(false);
@@ -47,6 +74,13 @@ export default function ConversationPage() {
     setMessages(data.messages);
   }, [id]);
 
+  const loadEvents = useCallback(async () => {
+    const r = await fetch(`/api/conversations/${id}/events`);
+    if (!r.ok) return;
+    const data = (await r.json()) as { events: ArenaEvent[] };
+    setEvents(data.events);
+  }, [id]);
+
   const loadParticipants = useCallback(async () => {
     const r = await fetch(`/api/conversations/${id}/permissions`);
     if (!r.ok) return;
@@ -56,10 +90,13 @@ export default function ConversationPage() {
 
   // Initial load
   useEffect(() => {
-    Promise.all([loadConversation(), loadMessages(), loadParticipants()]).then(
-      () => setLoading(false)
-    );
-  }, [loadConversation, loadMessages, loadParticipants]);
+    Promise.all([
+      loadConversation(),
+      loadMessages(),
+      loadEvents(),
+      loadParticipants(),
+    ]).then(() => setLoading(false));
+  }, [loadConversation, loadMessages, loadEvents, loadParticipants]);
 
   // Subscribe to SSE
   useEffect(() => {
@@ -76,6 +113,12 @@ export default function ConversationPage() {
     source.addEventListener("conversation", (e) => {
       const next = JSON.parse((e as MessageEvent).data) as Conversation;
       setConversation(next);
+    });
+    source.addEventListener("event", (e) => {
+      const ev = JSON.parse((e as MessageEvent).data) as ArenaEvent;
+      setEvents((prev) =>
+        prev.some((x) => x.id === ev.id) ? prev : [...prev, ev]
+      );
     });
     return () => source.close();
   }, [id, loadParticipants]);
@@ -161,7 +204,10 @@ export default function ConversationPage() {
 
   const conversationClosed = conversation?.status === "closed";
 
-  const messageList = useMemo(() => messages, [messages]);
+  const timeline = useMemo(
+    () => buildTimeline(messages, events),
+    [messages, events]
+  );
 
   if (loading) {
     return (
@@ -217,14 +263,18 @@ export default function ConversationPage() {
           onScroll={onTimelineScroll}
           className="flex-1 overflow-y-auto min-h-0 px-6 py-4 space-y-4"
         >
-          {messageList.length === 0 ? (
+          {timeline.length === 0 ? (
             <p className="text-sm text-muted-foreground italic">
               No messages yet. Type below or wait for an agent to post.
             </p>
           ) : (
-            messageList.map((m) => (
-              <MessageRow key={m.id} message={m} />
-            ))
+            timeline.map((entry) =>
+              entry.kind === "message" ? (
+                <MessageRow key={entry.key} message={entry.data} />
+              ) : (
+                <EventRow key={entry.key} event={entry.data} />
+              )
+            )
           )}
         </div>
 
@@ -309,6 +359,81 @@ export default function ConversationPage() {
         </div>
       </aside>
     </div>
+  );
+}
+
+function EventRow({ event }: { event: ArenaEvent }) {
+  const time = formatTime(event.created_at);
+  if (event.kind === "permission_changed") {
+    const action = event.payload.can_post ? "unmuted" : "muted";
+    return (
+      <SystemLine time={time}>
+        Moderator {action}{" "}
+        <AgentRef name={event.agent_name} color={event.agent_color} />
+      </SystemLine>
+    );
+  }
+  if (event.kind === "closed") {
+    return <SystemLine time={time}>Conversation closed</SystemLine>;
+  }
+  if (event.kind === "reopened") {
+    return <SystemLine time={time}>Conversation reopened</SystemLine>;
+  }
+  if (event.kind === "rejected") {
+    const reason = event.payload.reason ?? "blocked";
+    return (
+      <div className="flex flex-col gap-1 border-l-2 border-amber-500/40 pl-3 py-1">
+        <div className="flex items-center gap-2 text-xs text-amber-500/90">
+          <span>⊘</span>
+          <AgentRef name={event.agent_name} color={event.agent_color} />
+          <span>tried to post — {reason}</span>
+          <span className="text-muted-foreground">{time}</span>
+        </div>
+        {event.payload.body_preview ? (
+          <p className="pl-5 text-xs text-muted-foreground italic line-clamp-3">
+            “{event.payload.body_preview}”
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+  return null;
+}
+
+function SystemLine({
+  time,
+  children,
+}: {
+  time: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground py-1">
+      <span className="border-t border-border flex-1" />
+      <span className="flex items-center gap-1.5 px-2">
+        {children}
+        <span className="opacity-70">· {time}</span>
+      </span>
+      <span className="border-t border-border flex-1" />
+    </div>
+  );
+}
+
+function AgentRef({
+  name,
+  color,
+}: {
+  name: string | null;
+  color: string | null;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span
+        className="inline-block w-2 h-2 rounded-full"
+        style={{ background: color ?? "#888" }}
+      />
+      <span className="font-medium text-foreground">{name ?? "(unknown)"}</span>
+    </span>
   );
 }
 

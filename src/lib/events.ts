@@ -1,10 +1,11 @@
 import { EventEmitter } from "node:events";
-import type { Conversation, Message } from "./types";
+import type { ArenaEvent, Conversation, Message } from "./types";
 
 type Events = {
   message: (conversationId: string, message: Message) => void;
   permission: (conversationId: string) => void;
   conversation: (conversationId: string, conversation: Conversation) => void;
+  event: (conversationId: string, event: ArenaEvent) => void;
 };
 
 declare global {
@@ -49,4 +50,13 @@ export function emitConversation(
 export function onConversation(handler: Events["conversation"]) {
   bus().on("conversation", handler);
   return () => bus().off("conversation", handler);
+}
+
+export function emitEvent(conversationId: string, event: ArenaEvent) {
+  bus().emit("event", conversationId, event);
+}
+
+export function onEvent(handler: Events["event"]) {
+  bus().on("event", handler);
+  return () => bus().off("event", handler);
 }

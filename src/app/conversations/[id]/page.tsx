@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
@@ -62,8 +62,6 @@ export default function ConversationPage() {
   const [events, setEvents] = useState<ArenaEvent[]>([]);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [soloTarget, setSoloTarget] = useState<Agent | null>(null);
-  const [composerValue, setComposerValue] = useState("");
-  const [posting, setPosting] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const timelineRef = useRef<HTMLDivElement | null>(null);
@@ -146,28 +144,6 @@ export default function ConversationPage() {
     if (!el) return;
     const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
     stickToBottomRef.current = distance < 80;
-  }
-
-  async function postModeratorMessage() {
-    const body = composerValue.trim();
-    if (!body || posting) return;
-    setPosting(true);
-    try {
-      const r = await fetch(`/api/conversations/${id}/messages`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body, as: "moderator" }),
-      });
-      if (!r.ok) {
-        const err = (await r.json().catch(() => ({}))) as { error?: string };
-        throw new Error(err.error ?? "Failed to post");
-      }
-      setComposerValue("");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed");
-    } finally {
-      setPosting(false);
-    }
   }
 
   async function bulkPermissions(action: "mute_all" | "unmute_all") {
@@ -339,30 +315,7 @@ export default function ConversationPage() {
               Conversation is closed.
             </p>
           ) : (
-            <div className="flex gap-2 items-end">
-              <Textarea
-                value={composerValue}
-                onChange={(e) => setComposerValue(e.target.value)}
-                onKeyDown={(e) => {
-                  if (
-                    (e.metaKey || e.ctrlKey) &&
-                    e.key === "Enter"
-                  ) {
-                    e.preventDefault();
-                    postModeratorMessage();
-                  }
-                }}
-                placeholder="Post as Moderator… (⌘/Ctrl+Enter to send, markdown supported)"
-                rows={2}
-                className="resize-none"
-              />
-              <Button
-                onClick={postModeratorMessage}
-                disabled={posting || !composerValue.trim()}
-              >
-                {posting ? "Sending…" : "Send"}
-              </Button>
-            </div>
+            <Composer conversationId={id} />
           )}
         </div>
       </section>
@@ -479,7 +432,55 @@ export default function ConversationPage() {
   );
 }
 
-function EventRow({ event }: { event: ArenaEvent }) {
+function Composer({ conversationId }: { conversationId: string }) {
+  const [value, setValue] = useState("");
+  const [posting, setPosting] = useState(false);
+
+  async function send() {
+    const body = value.trim();
+    if (!body || posting) return;
+    setPosting(true);
+    try {
+      const r = await fetch(`/api/conversations/${conversationId}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body, as: "moderator" }),
+      });
+      if (!r.ok) {
+        const err = (await r.json().catch(() => ({}))) as { error?: string };
+        throw new Error(err.error ?? "Failed to post");
+      }
+      setValue("");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setPosting(false);
+    }
+  }
+
+  return (
+    <div className="flex gap-2 items-end">
+      <Textarea
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+            e.preventDefault();
+            send();
+          }
+        }}
+        placeholder="Post as Moderator… (⌘/Ctrl+Enter to send, markdown supported)"
+        rows={2}
+        className="resize-none"
+      />
+      <Button onClick={send} disabled={posting || !value.trim()}>
+        {posting ? "Sending…" : "Send"}
+      </Button>
+    </div>
+  );
+}
+
+const EventRow = memo(function EventRow({ event }: { event: ArenaEvent }) {
   const time = formatTime(event.created_at);
   if (event.kind === "permission_changed") {
     const action = event.payload.can_post ? "unmuted" : "muted";
@@ -529,7 +530,7 @@ function EventRow({ event }: { event: ArenaEvent }) {
     );
   }
   return null;
-}
+});
 
 function SystemLine({
   time,
@@ -568,7 +569,7 @@ function AgentRef({
   );
 }
 
-function MessageRow({ message }: { message: Message }) {
+const MessageRow = memo(function MessageRow({ message }: { message: Message }) {
   const isModerator = message.author_type === "moderator";
   return (
     <div className="flex flex-col gap-1">
@@ -581,13 +582,7 @@ function MessageRow({ message }: { message: Message }) {
             style={{ background: message.author_color ?? "#888" }}
           />
         )}
-        <span
-          className={
-            isModerator
-              ? "font-medium text-foreground"
-              : "font-medium text-foreground"
-          }
-        >
+        <span className="font-medium text-foreground">
           {message.author_name}
         </span>
         {isModerator ? (
@@ -604,4 +599,4 @@ function MessageRow({ message }: { message: Message }) {
       </div>
     </div>
   );
-}
+});

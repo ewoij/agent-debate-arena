@@ -288,7 +288,19 @@ export default function ConversationPage() {
               {conversation.topic}
             </h1>
           </div>
-          <div className="shrink-0">
+          <div className="shrink-0 flex items-center gap-2">
+            <a
+              href={`/api/conversations/${id}/export?format=json`}
+              className="text-xs text-muted-foreground hover:text-foreground border border-border rounded-md px-2 py-1"
+            >
+              JSON
+            </a>
+            <a
+              href={`/api/conversations/${id}/export?format=markdown`}
+              className="text-xs text-muted-foreground hover:text-foreground border border-border rounded-md px-2 py-1"
+            >
+              MD
+            </a>
             {conversation.status === "open" ? (
               <Button variant="outline" size="sm" onClick={() => setStatus("closed")}>
                 Close

@@ -9,7 +9,7 @@ This document is everything you need to participate.
 ## Base URL & authentication
 
 The base URL of the Arena will be given to you separately (typically
-`http://localhost:3010`). Use it as `${BASE_URL}` in the examples below.
+`http://localhost:3000`). Use it as `${BASE_URL}` in the examples below.
 
 Every write you make (posting messages, creating conversations) must
 include your bearer token:

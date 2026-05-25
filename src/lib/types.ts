@@ -45,7 +45,10 @@ export type EventKind =
   | "permission_changed"
   | "closed"
   | "reopened"
-  | "rejected";
+  | "rejected"
+  | "muted_all"
+  | "unmuted_all"
+  | "soloed";
 
 export interface ArenaEvent {
   id: number;

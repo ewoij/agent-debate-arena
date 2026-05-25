@@ -10,6 +10,14 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { formatTime } from "@/lib/format";
 import type { Agent, ArenaEvent, Conversation, Message } from "@/lib/types";
@@ -53,6 +61,7 @@ export default function ConversationPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [events, setEvents] = useState<ArenaEvent[]>([]);
   const [participants, setParticipants] = useState<Participant[]>([]);
+  const [soloTarget, setSoloTarget] = useState<Agent | null>(null);
   const [composerValue, setComposerValue] = useState("");
   const [posting, setPosting] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -158,6 +167,40 @@ export default function ConversationPage() {
       toast.error(e instanceof Error ? e.message : "Failed");
     } finally {
       setPosting(false);
+    }
+  }
+
+  async function bulkPermissions(action: "mute_all" | "unmute_all") {
+    try {
+      const r = await fetch(`/api/conversations/${id}/permissions/bulk`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      if (!r.ok) throw new Error("Bulk action failed");
+      await loadParticipants();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed");
+    }
+  }
+
+  async function soloGlobally(agentId: string, agentName: string) {
+    try {
+      const r = await fetch(`/api/permissions/solo`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agent_id: agentId }),
+      });
+      if (!r.ok) throw new Error("Solo failed");
+      const data = (await r.json()) as { affected_conversations: number };
+      toast.success(
+        `Soloed ${agentName} across ${data.affected_conversations} open conversation${
+          data.affected_conversations === 1 ? "" : "s"
+        }`
+      );
+      await loadParticipants();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed");
     }
   }
 
@@ -332,7 +375,7 @@ export default function ConversationPage() {
             participants.map((p) => (
               <div
                 key={p.agent.id}
-                className="flex items-center justify-between gap-2 px-2 py-1.5 rounded hover:bg-accent/40"
+                className="group flex items-center justify-between gap-2 px-2 py-1.5 rounded hover:bg-accent/40"
               >
                 <div className="flex items-center gap-2 min-w-0">
                   <span
@@ -341,23 +384,85 @@ export default function ConversationPage() {
                   />
                   <span className="text-sm truncate">{p.agent.name}</span>
                 </div>
-                <Switch
-                  checked={p.can_post}
-                  onCheckedChange={(v) => togglePermission(p.agent.id, v)}
-                  disabled={conversationClosed}
-                />
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setSoloTarget(p.agent)}
+                    disabled={conversationClosed}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity text-xs text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded disabled:opacity-0"
+                    title="Solo this agent across all open conversations"
+                  >
+                    solo
+                  </button>
+                  <Switch
+                    checked={p.can_post}
+                    onCheckedChange={(v) => togglePermission(p.agent.id, v)}
+                    disabled={conversationClosed}
+                  />
+                </div>
               </div>
             ))
           )}
         </div>
         <Separator />
-        <div className="p-2 text-xs text-muted-foreground space-y-1">
+        <div className="p-2 text-xs text-muted-foreground space-y-2">
+          <div className="flex gap-2 px-1">
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1 h-7 text-xs"
+              onClick={() => bulkPermissions("mute_all")}
+              disabled={conversationClosed || participants.length === 0}
+            >
+              Mute all
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1 h-7 text-xs"
+              onClick={() => bulkPermissions("unmute_all")}
+              disabled={conversationClosed || participants.length === 0}
+            >
+              Unmute all
+            </Button>
+          </div>
           <p className="px-2">
             {participants.filter((p) => p.can_post).length} of{" "}
             {participants.length} can post.
           </p>
         </div>
       </aside>
+
+      <Dialog
+        open={!!soloTarget}
+        onOpenChange={(o) => !o && setSoloTarget(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Solo {soloTarget?.name}?</DialogTitle>
+            <DialogDescription>
+              This will mute every other agent in every open conversation, and
+              ensure {soloTarget?.name} can post in all of them. Closed
+              conversations are not affected.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setSoloTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (soloTarget) {
+                  soloGlobally(soloTarget.id, soloTarget.name);
+                  setSoloTarget(null);
+                }
+              }}
+            >
+              Solo globally
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -378,6 +483,20 @@ function EventRow({ event }: { event: ArenaEvent }) {
   }
   if (event.kind === "reopened") {
     return <SystemLine time={time}>Conversation reopened</SystemLine>;
+  }
+  if (event.kind === "muted_all") {
+    return <SystemLine time={time}>Moderator muted everyone</SystemLine>;
+  }
+  if (event.kind === "unmuted_all") {
+    return <SystemLine time={time}>Moderator unmuted everyone</SystemLine>;
+  }
+  if (event.kind === "soloed") {
+    return (
+      <SystemLine time={time}>
+        Soloed{" "}
+        <AgentRef name={event.agent_name} color={event.agent_color} /> globally
+      </SystemLine>
+    );
   }
   if (event.kind === "rejected") {
     const reason = event.payload.reason ?? "blocked";

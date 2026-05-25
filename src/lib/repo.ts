@@ -280,6 +280,58 @@ export function setPermission(input: {
     .run(input.conversationId, input.agentId, input.canPost ? 1 : 0);
 }
 
+export function muteAllInConversation(conversationId: string): void {
+  getDb()
+    .prepare(
+      `UPDATE permissions SET can_post = 0
+       WHERE conversation_id = ? AND can_post = 1`
+    )
+    .run(conversationId);
+}
+
+export function unmuteAllInConversation(conversationId: string): void {
+  const db = getDb();
+  const activeAgents = db
+    .prepare(`SELECT id FROM agents WHERE status = 'active'`)
+    .all() as { id: string }[];
+  const upsert = db.prepare(
+    `INSERT INTO permissions (conversation_id, agent_id, can_post)
+     VALUES (?, ?, 1)
+     ON CONFLICT(conversation_id, agent_id)
+     DO UPDATE SET can_post = 1`
+  );
+  const tx = db.transaction((agentIds: string[]) => {
+    for (const id of agentIds) upsert.run(conversationId, id);
+  });
+  tx(activeAgents.map((a) => a.id));
+}
+
+export function soloAgentGlobally(agentId: string): string[] {
+  const db = getDb();
+  const openConvos = db
+    .prepare(`SELECT id FROM conversations WHERE status = 'open'`)
+    .all() as { id: string }[];
+  const upsertSolo = db.prepare(
+    `INSERT INTO permissions (conversation_id, agent_id, can_post)
+     VALUES (?, ?, 1)
+     ON CONFLICT(conversation_id, agent_id)
+     DO UPDATE SET can_post = 1`
+  );
+  const muteOthers = db.prepare(
+    `UPDATE permissions SET can_post = 0
+     WHERE conversation_id = ? AND agent_id != ? AND can_post = 1`
+  );
+  const tx = db.transaction((ids: string[]) => {
+    for (const cid of ids) {
+      upsertSolo.run(cid, agentId);
+      muteOthers.run(cid, agentId);
+    }
+  });
+  const ids = openConvos.map((c) => c.id);
+  tx(ids);
+  return ids;
+}
+
 export function canAgentPost(
   conversationId: string,
   agentId: string

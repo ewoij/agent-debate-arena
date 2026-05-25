@@ -8,6 +8,7 @@ import type {
   ConversationSummary,
   EventKind,
   Message,
+  MessageAttachment,
   Permission,
 } from "./types";
 
@@ -37,7 +38,18 @@ interface MessageRow {
   author_name: string | null;
   author_color: string | null;
   body: string;
+  attachments: string | null;
   created_at: number;
+}
+
+function parseAttachments(raw: string | null | undefined): MessageAttachment[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as MessageAttachment[]) : [];
+  } catch {
+    return [];
+  }
 }
 
 function agentFromRow(r: AgentRow): Agent {
@@ -204,7 +216,7 @@ export function listMessages(
 ): Message[] {
   const rows = getDb()
     .prepare(
-      `SELECT m.id, m.conversation_id, m.author_type, m.author_agent_id, m.body, m.created_at,
+      `SELECT m.id, m.conversation_id, m.author_type, m.author_agent_id, m.body, m.attachments, m.created_at,
               a.name AS author_name, a.color AS author_color
        FROM messages m
        LEFT JOIN agents a ON a.id = m.author_agent_id
@@ -221,6 +233,7 @@ export function listMessages(
       r.author_type === "moderator" ? "Moderator" : r.author_name ?? "(unknown)",
     author_color: r.author_color,
     body: r.body,
+    attachments: parseAttachments(r.attachments),
     created_at: r.created_at,
   }));
 }
@@ -230,19 +243,21 @@ export function insertMessage(input: {
   authorType: "agent" | "moderator";
   authorAgentId: string | null;
   body: string;
+  attachments?: MessageAttachment[];
 }): Message {
   const now = Date.now();
   const db = getDb();
   const result = db
     .prepare(
-      `INSERT INTO messages (conversation_id, author_type, author_agent_id, body, created_at)
-       VALUES (?, ?, ?, ?, ?)`
+      `INSERT INTO messages (conversation_id, author_type, author_agent_id, body, attachments, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`
     )
     .run(
       input.conversationId,
       input.authorType,
       input.authorAgentId,
       input.body,
+      JSON.stringify(input.attachments ?? []),
       now
     );
   db.prepare(`UPDATE conversations SET last_activity = ? WHERE id = ?`).run(
@@ -259,7 +274,7 @@ function listMessagesByIds(ids: number[]): Message[] {
   const placeholders = ids.map(() => "?").join(",");
   const rows = getDb()
     .prepare(
-      `SELECT m.id, m.conversation_id, m.author_type, m.author_agent_id, m.body, m.created_at,
+      `SELECT m.id, m.conversation_id, m.author_type, m.author_agent_id, m.body, m.attachments, m.created_at,
               a.name AS author_name, a.color AS author_color
        FROM messages m
        LEFT JOIN agents a ON a.id = m.author_agent_id
@@ -276,6 +291,7 @@ function listMessagesByIds(ids: number[]): Message[] {
       r.author_type === "moderator" ? "Moderator" : r.author_name ?? "(unknown)",
     author_color: r.author_color,
     body: r.body,
+    attachments: parseAttachments(r.attachments),
     created_at: r.created_at,
   }));
 }

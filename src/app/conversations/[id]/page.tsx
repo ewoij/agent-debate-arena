@@ -432,25 +432,44 @@ export default function ConversationPage() {
   );
 }
 
+interface PendingAttachment {
+  mime: string;
+  data_base64: string;
+  previewUrl: string;
+  name: string;
+}
+
 function Composer({ conversationId }: { conversationId: string }) {
   const [value, setValue] = useState("");
   const [posting, setPosting] = useState(false);
+  const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   async function send() {
     const body = value.trim();
-    if (!body || posting) return;
+    if (posting) return;
+    if (!body && attachments.length === 0) return;
     setPosting(true);
     try {
       const r = await fetch(`/api/conversations/${conversationId}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body, as: "moderator" }),
+        body: JSON.stringify({
+          body,
+          as: "moderator",
+          attachments: attachments.map((a) => ({
+            mime: a.mime,
+            data_base64: a.data_base64,
+          })),
+        }),
       });
       if (!r.ok) {
         const err = (await r.json().catch(() => ({}))) as { error?: string };
         throw new Error(err.error ?? "Failed to post");
       }
       setValue("");
+      attachments.forEach((a) => URL.revokeObjectURL(a.previewUrl));
+      setAttachments([]);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed");
     } finally {
@@ -458,26 +477,119 @@ function Composer({ conversationId }: { conversationId: string }) {
     }
   }
 
+  async function onPickFiles(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    const allowed = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+    const next: PendingAttachment[] = [];
+    for (const file of Array.from(files)) {
+      if (!allowed.has(file.type)) {
+        toast.error(`${file.name}: unsupported type (${file.type || "unknown"})`);
+        continue;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error(`${file.name}: exceeds 5MB`);
+        continue;
+      }
+      const data_base64 = await fileToBase64(file);
+      next.push({
+        mime: file.type,
+        data_base64,
+        previewUrl: URL.createObjectURL(file),
+        name: file.name,
+      });
+    }
+    if (next.length === 0) return;
+    setAttachments((prev) => [...prev, ...next].slice(0, 4));
+  }
+
+  function removeAttachment(index: number) {
+    setAttachments((prev) => {
+      const a = prev[index];
+      if (a) URL.revokeObjectURL(a.previewUrl);
+      return prev.filter((_, i) => i !== index);
+    });
+  }
+
   return (
-    <div className="flex gap-2 items-end">
-      <Textarea
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onKeyDown={(e) => {
-          if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-            e.preventDefault();
-            send();
-          }
-        }}
-        placeholder="Post as Moderator… (⌘/Ctrl+Enter to send, markdown supported)"
-        rows={2}
-        className="resize-none"
-      />
-      <Button onClick={send} disabled={posting || !value.trim()}>
-        {posting ? "Sending…" : "Send"}
-      </Button>
+    <div className="flex flex-col gap-2">
+      {attachments.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          {attachments.map((a, i) => (
+            <div key={a.previewUrl} className="relative">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={a.previewUrl}
+                alt={a.name}
+                className="h-16 w-16 object-cover rounded-md border border-border"
+              />
+              <button
+                type="button"
+                onClick={() => removeAttachment(i)}
+                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-background border border-border text-xs leading-none hover:bg-destructive hover:text-destructive-foreground"
+                title="Remove"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      <div className="flex gap-2 items-end">
+        <Textarea
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+              e.preventDefault();
+              send();
+            }
+          }}
+          placeholder="Post as Moderator… (⌘/Ctrl+Enter to send, markdown supported)"
+          rows={2}
+          className="resize-none"
+        />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/gif,image/webp"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            onPickFiles(e.target.files);
+            e.target.value = "";
+          }}
+        />
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={posting || attachments.length >= 4}
+          title="Attach image"
+        >
+          📎
+        </Button>
+        <Button
+          onClick={send}
+          disabled={posting || (!value.trim() && attachments.length === 0)}
+        >
+          {posting ? "Sending…" : "Send"}
+        </Button>
+      </div>
     </div>
   );
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      const idx = result.indexOf(",");
+      resolve(idx >= 0 ? result.slice(idx + 1) : result);
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
 }
 
 const EventRow = memo(function EventRow({ event }: { event: ArenaEvent }) {
@@ -594,9 +706,32 @@ const MessageRow = memo(function MessageRow({ message }: { message: Message }) {
           {formatTime(message.created_at)}
         </span>
       </div>
-      <div className="pl-5 text-sm markdown-body">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.body}</ReactMarkdown>
-      </div>
+      {message.body ? (
+        <div className="pl-5 text-sm markdown-body">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.body}</ReactMarkdown>
+        </div>
+      ) : null}
+      {message.attachments && message.attachments.length > 0 ? (
+        <div className="pl-5 flex flex-wrap gap-2 pt-1">
+          {message.attachments.map((a) => (
+            <a
+              key={a.url}
+              href={a.url}
+              target="_blank"
+              rel="noreferrer"
+              className="block"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={a.url}
+                alt=""
+                className="max-h-64 max-w-xs rounded-md border border-border object-contain bg-muted/30"
+                loading="lazy"
+              />
+            </a>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 });

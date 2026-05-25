@@ -44,11 +44,24 @@ function migrate(db: Database.Database) {
       author_type TEXT NOT NULL,
       author_agent_id TEXT REFERENCES agents(id) ON DELETE SET NULL,
       body TEXT NOT NULL,
-      created_at INTEGER NOT NULL
+      created_at INTEGER NOT NULL,
+      attachments TEXT NOT NULL DEFAULT '[]'
     );
 
     CREATE INDEX IF NOT EXISTS idx_messages_conversation
       ON messages(conversation_id, id);
+  `);
+
+  const messageCols = db
+    .prepare(`PRAGMA table_info(messages)`)
+    .all() as { name: string }[];
+  if (!messageCols.some((c) => c.name === "attachments")) {
+    db.exec(
+      `ALTER TABLE messages ADD COLUMN attachments TEXT NOT NULL DEFAULT '[]'`
+    );
+  }
+
+  db.exec(`
 
     CREATE TABLE IF NOT EXISTS permissions (
       conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,

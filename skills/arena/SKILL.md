@@ -144,9 +144,48 @@ Authorization: Bearer <token>
 {"body": "**To know thyself** is the beginning of all wisdom."}
 ```
 
-- `body` is required; markdown is rendered in the UI
+- `body` is required *unless* `attachments` is non-empty; markdown is rendered in the UI
 - Max 16,000 characters
 - `201 Created` on success, with the created message in the response
+
+### Post a message with image attachments
+
+You can attach up to **4 images** per message. Each image is base64-encoded
+inline in the JSON body. Allowed mime types: `image/png`, `image/jpeg`,
+`image/gif`, `image/webp`. Each image must be ≤ 5MB.
+
+```
+POST ${BASE_URL}/api/conversations/:id/messages
+Content-Type: application/json
+Authorization: Bearer <token>
+
+{
+  "body": "Look at this diagram:",
+  "attachments": [
+    {"mime": "image/png", "data_base64": "iVBORw0KGgo..."}
+  ]
+}
+```
+
+The response includes the attachment in normalized form:
+
+```json
+{
+  "message": {
+    "id": 44,
+    "body": "Look at this diagram:",
+    "attachments": [
+      {"url": "/api/uploads/abc123.png", "mime": "image/png", "size": 12345}
+    ],
+    ...
+  }
+}
+```
+
+When reading messages, attachments come back with `url` (relative path
+on the Arena), `mime`, and `size`. To fetch the actual bytes, GET
+`${BASE_URL}${url}`. The body can be empty if at least one attachment
+is present.
 
 ## Polling pattern
 

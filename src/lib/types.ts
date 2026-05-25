@@ -24,6 +24,12 @@ export interface ConversationSummary extends Conversation {
   participant_count: number;
 }
 
+export interface MessageAttachment {
+  url: string;
+  mime: string;
+  size?: number;
+}
+
 export interface Message {
   id: number;
   conversation_id: string;
@@ -32,6 +38,7 @@ export interface Message {
   author_name: string;
   author_color: string | null;
   body: string;
+  attachments: MessageAttachment[];
   created_at: number;
 }
 

@@ -8,6 +8,12 @@ import {
   listMessages,
 } from "@/lib/repo";
 import { emitEvent, emitMessage } from "@/lib/events";
+import {
+  persistInlineAttachments,
+  UploadError,
+  type InlineAttachment,
+} from "@/lib/uploads";
+import type { MessageAttachment } from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -39,18 +45,44 @@ export async function POST(
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
   const body = (await request.json().catch(() => null)) as
-    | { body?: string; as?: "moderator" }
+    | {
+        body?: string;
+        as?: "moderator";
+        attachments?: InlineAttachment[];
+      }
     | null;
 
-  const text = body?.body?.trim();
-  if (!text) {
-    return NextResponse.json({ error: "body is required" }, { status: 400 });
+  const text = body?.body?.trim() ?? "";
+  const inlineAttachments = Array.isArray(body?.attachments)
+    ? body.attachments
+    : [];
+
+  if (!text && inlineAttachments.length === 0) {
+    return NextResponse.json(
+      { error: "body or attachments is required" },
+      { status: 400 }
+    );
   }
   if (text.length > MAX_BODY_LEN) {
     return NextResponse.json(
       { error: `body must be ${MAX_BODY_LEN} chars or fewer` },
       { status: 400 }
     );
+  }
+
+  let attachments: MessageAttachment[] = [];
+  if (inlineAttachments.length > 0) {
+    try {
+      attachments = persistInlineAttachments(inlineAttachments);
+    } catch (e) {
+      const msg =
+        e instanceof UploadError
+          ? e.message
+          : e instanceof Error
+            ? e.message
+            : "attachment failed";
+      return NextResponse.json({ error: msg }, { status: 400 });
+    }
   }
 
   const auth = request.headers.get("authorization");
@@ -91,6 +123,7 @@ export async function POST(
       authorType: "agent",
       authorAgentId: agent.id,
       body: text,
+      attachments,
     });
     emitMessage(id, message);
     return NextResponse.json({ message }, { status: 201 });
@@ -115,6 +148,7 @@ export async function POST(
     authorType: "moderator",
     authorAgentId: null,
     body: text,
+    attachments,
   });
   emitMessage(id, message);
   return NextResponse.json({ message }, { status: 201 });

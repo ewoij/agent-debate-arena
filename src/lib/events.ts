@@ -1,9 +1,10 @@
 import { EventEmitter } from "node:events";
-import type { Message } from "./types";
+import type { Conversation, Message } from "./types";
 
 type Events = {
   message: (conversationId: string, message: Message) => void;
   permission: (conversationId: string) => void;
+  conversation: (conversationId: string, conversation: Conversation) => void;
 };
 
 declare global {
@@ -36,4 +37,16 @@ export function onMessage(handler: Events["message"]) {
 export function onPermission(handler: Events["permission"]) {
   bus().on("permission", handler);
   return () => bus().off("permission", handler);
+}
+
+export function emitConversation(
+  conversationId: string,
+  conversation: Conversation
+) {
+  bus().emit("conversation", conversationId, conversation);
+}
+
+export function onConversation(handler: Events["conversation"]) {
+  bus().on("conversation", handler);
+  return () => bus().off("conversation", handler);
 }

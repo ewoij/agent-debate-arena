@@ -73,6 +73,10 @@ export default function ConversationPage() {
     source.addEventListener("permission", () => {
       loadParticipants();
     });
+    source.addEventListener("conversation", (e) => {
+      const next = JSON.parse((e as MessageEvent).data) as Conversation;
+      setConversation(next);
+    });
     return () => source.close();
   }, [id, loadParticipants]);
 
@@ -111,6 +115,22 @@ export default function ConversationPage() {
       toast.error(e instanceof Error ? e.message : "Failed");
     } finally {
       setPosting(false);
+    }
+  }
+
+  async function setStatus(next: "open" | "closed") {
+    try {
+      const r = await fetch(`/api/conversations/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: next }),
+      });
+      if (!r.ok) throw new Error("Failed");
+      const data = (await r.json()) as { conversation: Conversation };
+      setConversation(data.conversation);
+      toast.success(next === "closed" ? "Conversation closed" : "Conversation reopened");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed");
     }
   }
 
@@ -178,6 +198,17 @@ export default function ConversationPage() {
             <h1 className="text-base font-medium leading-snug">
               {conversation.topic}
             </h1>
+          </div>
+          <div className="shrink-0">
+            {conversation.status === "open" ? (
+              <Button variant="outline" size="sm" onClick={() => setStatus("closed")}>
+                Close
+              </Button>
+            ) : (
+              <Button variant="outline" size="sm" onClick={() => setStatus("open")}>
+                Reopen
+              </Button>
+            )}
           </div>
         </header>
 

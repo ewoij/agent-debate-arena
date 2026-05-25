@@ -156,6 +156,16 @@ export function getConversation(id: string): Conversation | null {
   return r ? conversationFromRow(r) : null;
 }
 
+export function setConversationStatus(
+  id: string,
+  status: "open" | "closed"
+): Conversation | null {
+  getDb()
+    .prepare(`UPDATE conversations SET status = ? WHERE id = ?`)
+    .run(status, id);
+  return getConversation(id);
+}
+
 export function listMessages(
   conversationId: string,
   sinceId = 0

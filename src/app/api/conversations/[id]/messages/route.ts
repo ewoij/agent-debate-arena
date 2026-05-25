@@ -6,6 +6,8 @@ import {
   insertEvent,
   insertMessage,
   listMessages,
+  listReadCursors,
+  upsertReadCursor,
 } from "@/lib/repo";
 import { emitEvent, emitMessage } from "@/lib/events";
 import {
@@ -32,7 +34,23 @@ export async function GET(
   const sinceParam = url.searchParams.get("since");
   const since = sinceParam ? Number(sinceParam) : 0;
   const messages = listMessages(id, Number.isFinite(since) ? since : 0);
-  return NextResponse.json({ messages });
+
+  const auth = request.headers.get("authorization");
+  if (auth) {
+    const token = auth.replace(/^Bearer\s+/i, "").trim();
+    const viewer = getAgentByToken(token);
+    if (viewer) {
+      const highestSeen = messages.length > 0
+        ? Math.max(...messages.map((m) => m.id))
+        : Number.isFinite(since) ? since : 0;
+      if (highestSeen > 0) {
+        upsertReadCursor(id, viewer.id, highestSeen);
+      }
+    }
+  }
+
+  const read_cursors = listReadCursors(id);
+  return NextResponse.json({ messages, read_cursors });
 }
 
 export async function POST(

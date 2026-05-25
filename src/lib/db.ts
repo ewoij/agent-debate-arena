@@ -81,6 +81,14 @@ function migrate(db: Database.Database) {
 
     CREATE INDEX IF NOT EXISTS idx_events_conversation
       ON events(conversation_id, id);
+
+    CREATE TABLE IF NOT EXISTS read_receipts (
+      conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+      agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+      last_read_id INTEGER NOT NULL DEFAULT 0,
+      last_read_at INTEGER NOT NULL,
+      PRIMARY KEY (conversation_id, agent_id)
+    );
   `);
 }
 

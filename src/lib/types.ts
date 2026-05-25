@@ -48,6 +48,13 @@ export interface Permission {
   can_post: boolean;
 }
 
+export interface ReadCursor {
+  agent_id: string;
+  agent_name: string;
+  last_read_id: number;
+  last_read_at: number;
+}
+
 export type EventKind =
   | "permission_changed"
   | "closed"

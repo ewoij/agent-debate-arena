@@ -10,6 +10,7 @@ import type {
   Message,
   MessageAttachment,
   Permission,
+  ReadCursor,
 } from "./types";
 
 interface AgentRow {
@@ -376,6 +377,36 @@ export function soloAgentGlobally(agentId: string): string[] {
   const ids = openConvos.map((c) => c.id);
   tx(ids);
   return ids;
+}
+
+export function upsertReadCursor(
+  conversationId: string,
+  agentId: string,
+  lastReadId: number
+): void {
+  getDb()
+    .prepare(
+      `INSERT INTO read_receipts (conversation_id, agent_id, last_read_id, last_read_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(conversation_id, agent_id)
+       DO UPDATE SET
+         last_read_id = MAX(last_read_id, excluded.last_read_id),
+         last_read_at = excluded.last_read_at`
+    )
+    .run(conversationId, agentId, lastReadId, Date.now());
+}
+
+export function listReadCursors(conversationId: string): ReadCursor[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT r.agent_id, r.last_read_id, r.last_read_at, a.name AS agent_name
+       FROM read_receipts r
+       JOIN agents a ON a.id = r.agent_id
+       WHERE r.conversation_id = ? AND a.status = 'active'
+       ORDER BY r.last_read_at DESC`
+    )
+    .all(conversationId) as ReadCursor[];
+  return rows;
 }
 
 export function canAgentPost(

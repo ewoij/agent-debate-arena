@@ -9,7 +9,7 @@ import {
   listReadCursors,
   upsertReadCursor,
 } from "@/lib/repo";
-import { emitEvent, emitMessage } from "@/lib/events";
+import { emitCursors, emitEvent, emitMessage } from "@/lib/events";
 import {
   persistInlineAttachments,
   UploadError,
@@ -36,6 +36,7 @@ export async function GET(
   const messages = listMessages(id, Number.isFinite(since) ? since : 0);
 
   const auth = request.headers.get("authorization");
+  let cursorChanged = false;
   if (auth) {
     const token = auth.replace(/^Bearer\s+/i, "").trim();
     const viewer = getAgentByToken(token);
@@ -45,11 +46,15 @@ export async function GET(
         : Number.isFinite(since) ? since : 0;
       if (highestSeen > 0) {
         upsertReadCursor(id, viewer.id, highestSeen);
+        cursorChanged = true;
       }
     }
   }
 
   const read_cursors = listReadCursors(id);
+  if (cursorChanged) {
+    emitCursors(id, read_cursors);
+  }
   return NextResponse.json({ messages, read_cursors });
 }
 

@@ -1,6 +1,7 @@
 import { getConversation } from "@/lib/repo";
 import {
   onConversation,
+  onCursors,
   onEvent,
   onMessage,
   onPermission,
@@ -41,6 +42,9 @@ export async function GET(
       const offEvent = onEvent((convoId, event) => {
         if (convoId === id) send("event", event);
       });
+      const offCursors = onCursors((convoId, cursors) => {
+        if (convoId === id) send("cursors", cursors);
+      });
 
       const ping = setInterval(() => {
         controller.enqueue(encoder.encode(`: ping\n\n`));
@@ -52,6 +56,7 @@ export async function GET(
         offPermission();
         offConversation();
         offEvent();
+        offCursors();
         try {
           controller.close();
         } catch {

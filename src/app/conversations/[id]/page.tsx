@@ -19,8 +19,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { formatTime } from "@/lib/format";
-import type { Agent, ArenaEvent, Conversation, Message } from "@/lib/types";
+import { formatTime, formatDistanceToNow } from "@/lib/format";
+import type {
+  Agent,
+  ArenaEvent,
+  Conversation,
+  Message,
+  ReadCursor,
+} from "@/lib/types";
 
 interface Participant {
   agent: Agent;
@@ -61,6 +67,7 @@ export default function ConversationPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [events, setEvents] = useState<ArenaEvent[]>([]);
   const [participants, setParticipants] = useState<Participant[]>([]);
+  const [cursors, setCursors] = useState<ReadCursor[]>([]);
   const [soloTarget, setSoloTarget] = useState<Agent | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -95,6 +102,13 @@ export default function ConversationPage() {
     setParticipants(data.participants);
   }, [id]);
 
+  const loadCursors = useCallback(async () => {
+    const r = await fetch(`/api/conversations/${id}/cursors`);
+    if (!r.ok) return;
+    const data = (await r.json()) as { read_cursors: ReadCursor[] };
+    setCursors(data.read_cursors);
+  }, [id]);
+
   // Initial load
   useEffect(() => {
     Promise.all([
@@ -102,8 +116,9 @@ export default function ConversationPage() {
       loadMessages(),
       loadEvents(),
       loadParticipants(),
+      loadCursors(),
     ]).then(() => setLoading(false));
-  }, [loadConversation, loadMessages, loadEvents, loadParticipants]);
+  }, [loadConversation, loadMessages, loadEvents, loadParticipants, loadCursors]);
 
   // Subscribe to SSE
   useEffect(() => {
@@ -126,6 +141,10 @@ export default function ConversationPage() {
       setEvents((prev) =>
         prev.some((x) => x.id === ev.id) ? prev : [...prev, ev]
       );
+    });
+    source.addEventListener("cursors", (e) => {
+      const next = JSON.parse((e as MessageEvent).data) as ReadCursor[];
+      setCursors(next);
     });
     return () => source.close();
   }, [id, loadParticipants]);
@@ -301,7 +320,11 @@ export default function ConversationPage() {
           ) : (
             timeline.map((entry) =>
               entry.kind === "message" ? (
-                <MessageRow key={entry.key} message={entry.data} />
+                <MessageRow
+                  key={entry.key}
+                  message={entry.data}
+                  readers={readersForMessage(entry.data, participants, cursors)}
+                />
               ) : (
                 <EventRow key={entry.key} event={entry.data} />
               )
@@ -681,7 +704,55 @@ function AgentRef({
   );
 }
 
-const MessageRow = memo(function MessageRow({ message }: { message: Message }) {
+interface MessageReader {
+  agent_id: string;
+  agent_name: string;
+  color: string;
+  hasRead: boolean;
+  last_read_at: number | null;
+}
+
+function readersForMessage(
+  message: Message,
+  participants: Participant[],
+  cursors: ReadCursor[]
+): MessageReader[] {
+  const cursorByAgent = new Map(cursors.map((c) => [c.agent_id, c]));
+  return participants
+    .filter((p) => p.agent.id !== message.author_agent_id)
+    .map((p) => {
+      const c = cursorByAgent.get(p.agent.id);
+      return {
+        agent_id: p.agent.id,
+        agent_name: p.agent.name,
+        color: p.agent.color,
+        hasRead: !!c && c.last_read_id >= message.id,
+        last_read_at: c?.last_read_at ?? null,
+      };
+    });
+}
+
+function readersEqual(a: MessageReader[], b: MessageReader[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (
+      a[i].agent_id !== b[i].agent_id ||
+      a[i].hasRead !== b[i].hasRead ||
+      a[i].last_read_at !== b[i].last_read_at
+    )
+      return false;
+  }
+  return true;
+}
+
+const MessageRow = memo(
+  function MessageRow({
+    message,
+    readers,
+  }: {
+    message: Message;
+    readers: MessageReader[];
+  }) {
   const isModerator = message.author_type === "moderator";
   return (
     <div className="flex flex-col gap-1">
@@ -705,6 +776,28 @@ const MessageRow = memo(function MessageRow({ message }: { message: Message }) {
         <span className="text-muted-foreground">
           {formatTime(message.created_at)}
         </span>
+        {readers.length > 0 ? (
+          <span className="ml-auto flex items-center gap-1">
+            {readers.map((r) => (
+              <span
+                key={r.agent_id}
+                title={
+                  r.hasRead && r.last_read_at
+                    ? `${r.agent_name} · read ${formatDistanceToNow(r.last_read_at)}`
+                    : `${r.agent_name} · not yet read`
+                }
+                className={
+                  "inline-block w-2 h-2 rounded-full " +
+                  (r.hasRead ? "" : "opacity-30")
+                }
+                style={{
+                  background: r.hasRead ? r.color : "transparent",
+                  border: r.hasRead ? "none" : `1px solid ${r.color}`,
+                }}
+              />
+            ))}
+          </span>
+        ) : null}
       </div>
       {message.body ? (
         <div className="pl-5 text-sm markdown-body">
@@ -734,4 +827,7 @@ const MessageRow = memo(function MessageRow({ message }: { message: Message }) {
       ) : null}
     </div>
   );
-});
+  },
+  (prev, next) =>
+    prev.message === next.message && readersEqual(prev.readers, next.readers)
+);

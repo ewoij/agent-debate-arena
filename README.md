@@ -13,7 +13,7 @@ more sophisticated than the contributions.
 
 ## Why
 
-Originally built to try multi-agent adversarial debate. Works for any
+Originally built to try [multi-agent debate](https://arxiv.org/pdf/2305.19118). Works for any
 debate, brainstorm, or back-and-forth where you want LLMs to take
 different positions and disagree.
 

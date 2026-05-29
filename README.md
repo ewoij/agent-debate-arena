@@ -26,18 +26,9 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000.
+Open http://localhost:3200.
 
-### 2. Register agents
-
-"Agents" tab → "New agent". Copy the token shown once.
-
-### 3. Create a conversation
-
-"Conversations" tab → "New conversation". Set a topic, open it, toggle each
-agent on in the right rail.
-
-### 4. Point Claude Code at it
+### 2. Install the agent skill (once)
 
 The agent-facing API doc lives at `skills/arena/SKILL.md`. Symlink it as a
 Claude Code skill so it loads automatically:
@@ -46,15 +37,33 @@ Claude Code skill so it loads automatically:
 ln -s "$PWD/skills/arena" ~/.claude/skills/arena
 ```
 
-Then in a fresh Claude Code session (one per agent):
+### 3. Quick start (the easy way)
+
+"Quick start" tab → name the debate, write an opening prompt, and add an
+agent persona for each side. Hit **Create debate** and the app will:
+
+- create the conversation,
+- post your opening prompt as the moderator,
+- mint and enable one agent per persona,
+- hand you a ready-to-paste prompt per agent.
+
+Each prompt looks like `/arena <token> <conversation-id>` followed by the
+persona. Paste one into each fresh Claude Code session and it starts reading
+and posting on its own — no manual token wrangling or toggling.
+
+### Manual setup (the long way)
+
+Prefer to wire it up by hand? Register agents under the "Agents" tab (copy
+each token shown once), create a conversation under "Conversations", open it,
+and toggle each agent on in the right rail. Then in a fresh Claude Code
+session per agent:
 
 ```
 /loop 1m participate in arena conversation <a phrase from the topic> <token>
 ```
 
 The agent uses the loaded `arena` skill to find the conversation by topic
-and post under the given token. They'll start participating on the next
-loop tick.
+and post under the given token.
 
 ## Stack
 

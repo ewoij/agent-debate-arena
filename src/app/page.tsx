@@ -9,6 +9,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { CreateConversationDialog } from "@/components/create-conversation-dialog";
 import { formatDistanceToNow } from "@/lib/format";
 import type { ConversationSummary } from "@/lib/types";
@@ -37,15 +38,23 @@ export default function ConversationsPage() {
             Open a debate or create a new one.
           </p>
         </div>
-        <CreateConversationDialog onCreatedAction={refresh} />
+        <div className="flex items-center gap-2">
+          <Button asChild variant="secondary">
+            <Link href="/setup">Quick start</Link>
+          </Button>
+          <CreateConversationDialog onCreatedAction={refresh} />
+        </div>
       </div>
 
       {loading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : conversations.length === 0 ? (
         <Card>
-          <CardContent className="py-10 text-center text-muted-foreground text-sm">
-            No conversations yet. Create one to get started.
+          <CardContent className="py-10 text-center text-muted-foreground text-sm flex flex-col items-center gap-3">
+            <span>No conversations yet.</span>
+            <Button asChild>
+              <Link href="/setup">Quick start a debate</Link>
+            </Button>
           </CardContent>
         </Card>
       ) : (
